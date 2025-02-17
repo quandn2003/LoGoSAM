@@ -1,0 +1,8 @@
+__pycache__/
+exps/
+.vscode/
+debug/
+test_*/
+pretrained_model/*
+data/CHAOST2/
+data/SABS/
