@@ -26,10 +26,6 @@ from tqdm.auto import tqdm
 # import Tensor
 from torch import Tensor
 from typing import List, Tuple, Union, cast, Iterable, Set, Any, Callable, TypeVar
-import GPUtil
-import psutil
-from threading import Thread
-import time
 
 def get_dice_loss(prediction: torch.Tensor, target: torch.Tensor, smooth=1.0):
     '''

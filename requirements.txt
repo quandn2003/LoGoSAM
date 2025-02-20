@@ -70,3 +70,5 @@ tzdata==2024.2
 urllib3==2.2.3
 wrapt==1.16.0
 tensorboard==2.19.0
+kneed==0.8.5
+sacred==0.8.4
