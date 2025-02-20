@@ -26,6 +26,10 @@ from tqdm.auto import tqdm
 # import Tensor
 from torch import Tensor
 from typing import List, Tuple, Union, cast, Iterable, Set, Any, Callable, TypeVar
+import GPUtil
+import psutil
+from threading import Thread
+import time
 
 def get_dice_loss(prediction: torch.Tensor, target: torch.Tensor, smooth=1.0):
     '''
@@ -102,6 +106,18 @@ def get_nii_dataset(_config):
 def get_dataset(_config):
     return get_nii_dataset(_config)
 
+def monitor_gpu_cpu():
+    while True:
+        gpus = GPUtil.getGPUs()
+        gpu_load = gpus[0].load * 100
+        gpu_memory = gpus[0].memoryUsed
+        cpu_percent = psutil.cpu_percent()
+        print(f"GPU Load: {gpu_load:.1f}%, GPU Memory: {gpu_memory}MB, CPU: {cpu_percent}%")
+        time.sleep(1)
+
+# Start monitoring in a separate thread
+monitor_thread = Thread(target=monitor_gpu_cpu, daemon=True)
+monitor_thread.start()
 
 @ex.automain
 def main(_run, _config, _log):
