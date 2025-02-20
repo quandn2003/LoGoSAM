@@ -106,18 +106,6 @@ def get_nii_dataset(_config):
 def get_dataset(_config):
     return get_nii_dataset(_config)
 
-def monitor_gpu_cpu():
-    while True:
-        gpus = GPUtil.getGPUs()
-        gpu_load = gpus[0].load * 100
-        gpu_memory = gpus[0].memoryUsed
-        cpu_percent = psutil.cpu_percent()
-        print(f"GPU Load: {gpu_load:.1f}%, GPU Memory: {gpu_memory}MB, CPU: {cpu_percent}%")
-        time.sleep(1)
-
-# Start monitoring in a separate thread
-monitor_thread = Thread(target=monitor_gpu_cpu, daemon=True)
-monitor_thread.start()
 
 @ex.automain
 def main(_run, _config, _log):
@@ -182,7 +170,7 @@ def main(_run, _config, _log):
 
     _log.info('###### Training ######')
     epoch_losses = []
-    for sub_epoch in range(1):
+    for sub_epoch in range(n_sub_epoches):
         _log.info(
             f'###### This is epoch {sub_epoch} of {n_sub_epoches} epoches ######')
         pbar = tqdm(trainloader)
