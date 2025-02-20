@@ -174,6 +174,9 @@ class MultiProtoAsConv(nn.Module):
             sup_y:      [way(1), shot, nb(1), h, w]
             vis_sim:    visualize raw similarities or not
         """
+        # print(f"qry: {qry.shape}")
+        # print(f"sup_x: {sup_x.shape}")
+        # print(f"sup_y: {sup_y.shape}")
 
         qry = qry.squeeze(1) # [way(1), nb(1), nc, hw] -> [way(1), nc, h, w]
         sup_x = sup_x.squeeze(0).squeeze(1) # [nshot, nc, h, w]
@@ -189,7 +192,15 @@ class MultiProtoAsConv(nn.Module):
             if isinstance(val_wsize, (tuple, list)):
                 val_wsize = val_wsize[0] 
         sup_y = sup_y.reshape(sup_x.shape[0], 1, sup_x.shape[-2], sup_x.shape[-1]) 
+        # print(f"sup_x: {sup_x.shape}")
+        # print(f"sup_y: {sup_y.shape}")
+        # print(f"val_wsize: {val_wsize}")
+        # print(f"thresh: {thresh}")
+        # print(f"isval: {isval}")
         pro_n, proto_grid, proto_indices = self.get_prototypes(sup_x, sup_y, mode, val_wsize, thresh, isval) 
+        # print(f"pro_n: {pro_n.shape}")
+        # print(f"proto_grid: {proto_grid.shape}")
+
         if 0 in pro_n.shape:
             print("failed to find prototypes")
         qry_n = qry if mode == 'mask' else safe_norm(qry)

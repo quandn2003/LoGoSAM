@@ -9,6 +9,7 @@ from .backbone.torchvision_backbones import TVDeeplabRes101Encoder
 from util.consts import DEFAULT_FEATURE_SIZE
 from util.lora import inject_trainable_lora
 # from util.utils import load_config_from_url, plot_dinov2_fts
+from .LoGoEncoder import LoGoEncoder
 import math
 
 # Specify a local path to the repository (or use installed package instead)
@@ -44,63 +45,67 @@ class FewShotSeg(nn.Module):
                 f'###### Pre-trained model f{self.pretrained_path} has been loaded ######')
 
     def get_encoder(self):
-        self.config['feature_hw'] = [DEFAULT_FEATURE_SIZE,
-                                     DEFAULT_FEATURE_SIZE]  # default feature map size
-        if self.config['which_model'] == 'dlfcn_res101' or self.config['which_model'] == 'default':
-            use_coco_init = self.config['use_coco_init']
-            self.encoder = TVDeeplabRes101Encoder(use_coco_init)
-            self.config['feature_hw'] = [
-                math.ceil(self.image_size/8), math.ceil(self.image_size/8)]
-        elif self.config['which_model'] == 'dinov2_l14':
-            self.encoder = torch.hub.load(
-                'facebookresearch/dinov2', 'dinov2_vitl14')
-            self.config['feature_hw'] = [max(
-                self.image_size//14, DEFAULT_FEATURE_SIZE), max(self.image_size//14, DEFAULT_FEATURE_SIZE)]
-        elif self.config['which_model'] == 'dinov2_l14_reg':
-            try:
-                self.encoder = torch.hub.load(
-                    'facebookresearch/dinov2', 'dinov2_vitl14_reg')
-            except RuntimeError as e:
-                self.encoder = torch.hub.load(
-                    'facebookresearch/dino', 'dinov2_vitl14_reg', force_reload=True)
-            self.config['feature_hw'] = [max(
-                self.image_size//14, DEFAULT_FEATURE_SIZE), max(self.image_size//14, DEFAULT_FEATURE_SIZE)]
-        elif self.config['which_model'] == 'dinov2_b14':
-            self.encoder = torch.hub.load(
-                'facebookresearch/dinov2', 'dinov2_vitb14')
-            self.config['feature_hw'] = [max(
-                self.image_size//14, DEFAULT_FEATURE_SIZE), max(self.image_size//14, DEFAULT_FEATURE_SIZE)]
-        else:
-            raise NotImplementedError(
-                f'Backbone network {self.config["which_model"]} not implemented')
+        # self.config['feature_hw'] = [DEFAULT_FEATURE_SIZE,
+        #                              DEFAULT_FEATURE_SIZE]  # default feature map size
+        # if self.config['which_model'] == 'dlfcn_res101' or self.config['which_model'] == 'default':
+        #     use_coco_init = self.config['use_coco_init']
+        #     self.encoder = TVDeeplabRes101Encoder(use_coco_init)
+        #     self.config['feature_hw'] = [
+        #         math.ceil(self.image_size/8), math.ceil(self.image_size/8)]
+        # elif self.config['which_model'] == 'dinov2_l14':
+        #     self.encoder = torch.hub.load(
+        #         'facebookresearch/dinov2', 'dinov2_vitl14')
+        #     self.config['feature_hw'] = [max(
+        #         self.image_size//14, DEFAULT_FEATURE_SIZE), max(self.image_size//14, DEFAULT_FEATURE_SIZE)]
+        # elif self.config['which_model'] == 'dinov2_l14_reg':
+        #     try:
+        #         self.encoder = torch.hub.load(
+        #             'facebookresearch/dinov2', 'dinov2_vitl14_reg')
+        #     except RuntimeError as e:
+        #         self.encoder = torch.hub.load(
+        #             'facebookresearch/dino', 'dinov2_vitl14_reg', force_reload=True)
+        #     self.config['feature_hw'] = [max(
+        #         self.image_size//14, DEFAULT_FEATURE_SIZE), max(self.image_size//14, DEFAULT_FEATURE_SIZE)]
+        # elif self.config['which_model'] == 'dinov2_b14':
+        #     self.encoder = torch.hub.load(
+        #         'facebookresearch/dinov2', 'dinov2_vitb14')
+        #     self.config['feature_hw'] = [max(
+        #         self.image_size//14, DEFAULT_FEATURE_SIZE), max(self.image_size//14, DEFAULT_FEATURE_SIZE)]
+        # else:
+        #     raise NotImplementedError(
+        #         f'Backbone network {self.config["which_model"]} not implemented')
 
-        if self.config['lora'] > 0:
-            self.encoder.requires_grad_(False)
-            print(f'Injecting LoRA with rank:{self.config["lora"]}')
-            encoder_lora_params = inject_trainable_lora(
-                self.encoder, r=self.config['lora'])
+        # if self.config['lora'] > 0:
+        #     self.encoder.requires_grad_(False)
+        #     print(f'Injecting LoRA with rank:{self.config["lora"]}')
+        #     encoder_lora_params = inject_trainable_lora(
+        #         self.encoder, r=self.config['lora'])
 
-    def get_features(self, imgs_concat):
-        if self.config['which_model'] == 'dlfcn_res101':
-            img_fts = self.encoder(imgs_concat, low_level=False)
-        elif 'dino' in self.config['which_model']:
-            # resize imgs_concat to the closest size that is divisble by 14
-            imgs_concat = F.interpolate(imgs_concat, size=(
-                self.image_size // 14 * 14, self.image_size // 14 * 14), mode='bilinear')
-            dino_fts = self.encoder.forward_features(imgs_concat)
-            img_fts = dino_fts["x_norm_patchtokens"]  # B, HW, C
-            img_fts = img_fts.permute(0, 2, 1)  # B, C, HW
-            C, HW = img_fts.shape[-2:]
-            img_fts = img_fts.view(-1, C, int(HW**0.5),
-                                   int(HW**0.5))  # B, C, H, W
-            if HW < DEFAULT_FEATURE_SIZE ** 2:
-                img_fts = F.interpolate(img_fts, size=(
-                    DEFAULT_FEATURE_SIZE, DEFAULT_FEATURE_SIZE), mode='bilinear')  # this is if h,w < (32,32)
-        else:
-            raise NotImplementedError(
-                f'Backbone network {self.config["which_model"]} not implemented')
+        self.encoder = LoGoEncoder()
+        self.config['feature_hw'] = [64, 64]
         
-        return img_fts
+
+    # def get_features(self, imgs_concat):
+    #     if self.config['which_model'] == 'dlfcn_res101':
+    #         img_fts = self.encoder(imgs_concat, low_level=False)
+    #     elif 'dino' in self.config['which_model']:
+    #         # resize imgs_concat to the closest size that is divisble by 14
+    #         imgs_concat = F.interpolate(imgs_concat, size=(
+    #             self.image_size // 14 * 14, self.image_size // 14 * 14), mode='bilinear')
+    #         dino_fts = self.encoder.forward_features(imgs_concat)
+    #         img_fts = dino_fts["x_norm_patchtokens"]  # B, HW, C
+    #         img_fts = img_fts.permute(0, 2, 1)  # B, C, HW
+    #         C, HW = img_fts.shape[-2:]
+    #         img_fts = img_fts.view(-1, C, int(HW**0.5),
+    #                                int(HW**0.5))  # B, C, H, W
+    #         if HW < DEFAULT_FEATURE_SIZE ** 2:
+    #             img_fts = F.interpolate(img_fts, size=(
+    #                 DEFAULT_FEATURE_SIZE, DEFAULT_FEATURE_SIZE), mode='bilinear')  # this is if h,w < (32,32)
+    #     else:
+    #         raise NotImplementedError(
+    #             f'Backbone network {self.config["which_model"]} not implemented')
+        
+    #     return img_fts
 
     def get_cls(self):
         """
@@ -113,7 +118,7 @@ class FewShotSeg(nn.Module):
             if 'dinov2_b14' in self.config['which_model']:
                 embed_dim = 768
             elif 'dinov2_l14' in self.config['which_model']:
-                embed_dim = 1024
+                embed_dim = 32
             self.cls_unit = MultiProtoAsConv(proto_grid=[proto_hw, proto_hw], feature_hw=self.config["feature_hw"], embed_dim=embed_dim)  # when treating it as ordinary prototype
             print(f"cls unit feature hw: {self.cls_unit.feature_hw}")
         else:
@@ -172,28 +177,55 @@ class FewShotSeg(nn.Module):
         assert n_ways == 1, "Multi-shot has not been implemented yet"
         assert n_queries == 1
 
+
+        # print(f"Get size")
         sup_bsize = supp_imgs[0][0].shape[0]
         img_size = supp_imgs[0][0].shape[-2:]
         if self.config["cls_name"] == 'grid_proto_3d':
             img_size = supp_imgs[0][0].shape[-3:]
         qry_bsize = qry_imgs[0].shape[0]
+        # print(f"finish Get size")
+
 
         imgs_concat = torch.cat([torch.cat(way, dim=0) for way in supp_imgs]
                                 + [torch.cat(qry_imgs, dim=0),], dim=0)
 
-        img_fts = self.get_features(imgs_concat)
-        if len(img_fts.shape) == 5:  # for 3D
-            fts_size = img_fts.shape[-3:]
-        else:
-            fts_size = img_fts.shape[-2:]
-        if supp_fts is None:
-            supp_fts = img_fts[:n_ways * n_shots * sup_bsize].view(
-                n_ways, n_shots, sup_bsize, -1, *fts_size)  # wa x sh x b x c x h' x w'
-            qry_fts = img_fts[n_ways * n_shots * sup_bsize:].view(
-                n_queries, qry_bsize, -1, *fts_size)   # N x B x C x H' x W'
-        else:
-            # N x B x C x H' x W'
-            qry_fts = img_fts.view(n_queries, qry_bsize, -1, *fts_size)
+        # img_fts = self.get_features(imgs_concat)
+        # if len(img_fts.shape) == 5:  # for 3D
+        #     fts_size = img_fts.shape[-3:]
+        # else:
+        #     fts_size = img_fts.shape[-2:]
+        # if supp_fts is None:
+        #     supp_fts = img_fts[:n_ways * n_shots * sup_bsize].view(
+        #         n_ways, n_shots, sup_bsize, -1, *fts_size)  # wa x sh x b x c x h' x w'
+        #     qry_fts = img_fts[n_ways * n_shots * sup_bsize:].view(
+        #         n_queries, qry_bsize, -1, *fts_size)   # N x B x C x H' x W'
+        # else:
+        #     # N x B x C x H' x W'
+        #     qry_fts = img_fts.view(n_queries, qry_bsize, -1, *fts_size)
+        
+        supp_fts = self.encoder(supp_imgs[0][0]).squeeze(0)
+        qry_fts = self.encoder(qry_imgs[0]).squeeze(0)
+        # print(supp_fts.shape)
+        # print(qry_fts.shape)
+        fts_size = qry_fts.shape[-2:]
+        # # Print all parameters before using view()
+        # print(f"n_ways: {n_ways}, n_shots: {n_shots}, sup_bsize: {sup_bsize}")
+        # print(f"fts_size: {fts_size}, fts_size flattened: {torch.prod(torch.tensor(fts_size))}")
+        # print(f"supp_fts.shape before view: {supp_fts.shape}")
+        # print(f"Expected elements for supp_fts.view: {n_ways * n_shots * sup_bsize * -1 * torch.prod(torch.tensor(fts_size))}")
+        
+        supp_fts = supp_fts.view(n_ways, n_shots, sup_bsize, -1, *fts_size)
+        
+        # print(f"n_queries: {n_queries}, qry_bsize: {qry_bsize}")
+        # print(f"qry_fts.shape before view: {qry_fts.shape}")
+        # print(f"Expected elements for qry_fts.view: {n_queries * qry_bsize * -1 * torch.prod(torch.tensor(fts_size))}")
+        
+        qry_fts = qry_fts.view(n_queries, qry_bsize, -1, *fts_size)
+        
+        # Print shapes after reshaping
+        # print(f"supp_fts.shape after view: {supp_fts.shape}")
+        # print(f"qry_fts.shape after view: {qry_fts.shape}")
 
         fore_mask = torch.stack([torch.stack(way, dim=0)
                                  for way in fore_mask], dim=0)  # Wa x Sh x B x H' x W'
