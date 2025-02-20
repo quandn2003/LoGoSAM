@@ -26,6 +26,10 @@ from tqdm.auto import tqdm
 # import Tensor
 from torch import Tensor
 from typing import List, Tuple, Union, cast, Iterable, Set, Any, Callable, TypeVar
+import GPUtil
+import psutil
+from threading import Thread
+import time
 
 def get_dice_loss(prediction: torch.Tensor, target: torch.Tensor, smooth=1.0):
     '''
@@ -102,6 +106,18 @@ def get_nii_dataset(_config):
 def get_dataset(_config):
     return get_nii_dataset(_config)
 
+def monitor_gpu_cpu():
+    while True:
+        gpus = GPUtil.getGPUs()
+        gpu_load = gpus[0].load * 100
+        gpu_memory = gpus[0].memoryUsed
+        cpu_percent = psutil.cpu_percent()
+        print(f"GPU Load: {gpu_load:.1f}%, GPU Memory: {gpu_memory}MB, CPU: {cpu_percent}%")
+        time.sleep(1)
+
+# Start monitoring in a separate thread
+monitor_thread = Thread(target=monitor_gpu_cpu, daemon=True)
+monitor_thread.start()
 
 @ex.automain
 def main(_run, _config, _log):
@@ -166,7 +182,7 @@ def main(_run, _config, _log):
 
     _log.info('###### Training ######')
     epoch_losses = []
-    for sub_epoch in range(n_sub_epoches):
+    for sub_epoch in range(1):
         _log.info(
             f'###### This is epoch {sub_epoch} of {n_sub_epoches} epoches ######')
         pbar = tqdm(trainloader)
@@ -187,16 +203,18 @@ def main(_run, _config, _log):
                 [query_label.long().to(device) for query_label in sample_batched['query_labels']], dim=0)
 
             loss = 0.0
-            try:
-                out = model(support_images, support_fg_mask, support_bg_mask,
-                        query_images, isval=False, val_wsize=None)
-                query_pred, align_loss, _, _, _, _, _ = out
-                # pred = np.array(query_pred.argmax(dim=1)[0].cpu())
-            except Exception as e:
-                print(f'faulty batch detected, skip: {e}')
-                # offload cuda memory
-                del support_images, support_fg_mask, support_bg_mask, query_images, query_labels
-                continue
+            # try:
+            #     out = model(support_images, support_fg_mask, support_bg_mask,
+            #             query_images, isval=False, val_wsize=None)
+            #     query_pred, align_loss, _, _, _, _, _ = out
+            #     # pred = np.array(query_pred.argmax(dim=1)[0].cpu())
+            # except Exception as e:
+            #     print(f'faulty batch detected, skip: {e}')
+            #     # offload cuda memory
+            #     del support_images, support_fg_mask, support_bg_mask, query_images, query_labels
+            #     continue
+            out = model(support_images, support_fg_mask, support_bg_mask, query_images, isval=False, val_wsize=None)
+            query_pred, align_loss, _, _, _, _, _ = out
                  
             query_loss = criterion(query_pred.float(), query_labels.long())
             loss += query_loss + align_loss
