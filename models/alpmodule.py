@@ -141,7 +141,7 @@ class MultiProtoAsConv(nn.Module):
             
             # get a grid of prototypes
             proto_grid = sup_y_g.clone().detach()
-            # proto_grid[proto_grid < thresh] = 0
+            proto_grid[proto_grid < thresh] = 0
             non_zero = torch.nonzero(proto_grid)
             for i, idx in enumerate(non_zero):
                 proto_grid[0, idx[1], idx[2], idx[3]] = i + 1
