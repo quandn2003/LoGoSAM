@@ -166,7 +166,7 @@ def main(_run, _config, _log):
 
     _log.info('###### Training ######')
     epoch_losses = []
-    for sub_epoch in range(n_sub_epoches):
+    for sub_epoch in range(1):
         _log.info(
             f'###### This is epoch {sub_epoch} of {n_sub_epoches} epoches ######')
         pbar = tqdm(trainloader)
