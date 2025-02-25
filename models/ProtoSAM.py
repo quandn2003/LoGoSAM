@@ -588,7 +588,7 @@ class ProtoSAM(nn.Module):
             if self.training:
                 return output_logits, [conf]
             return pred, [conf]
-        
+        ini_query_image_size = query_image.shape[-2:]
         if query_image.shape[-2:] != self.image_size:
             query_image = F.interpolate(query_image, size=self.image_size, mode='bilinear')
             output_logits = F.interpolate(output_logits, size=self.image_size, mode='bilinear')
@@ -610,7 +610,7 @@ class ProtoSAM(nn.Module):
             plot_connected_components(conn_components, query_image[0,0].detach().cpu(), conf)
         # print(f"connected components took {time.time() - start_time} seconds")
         if _pred.max() == 0:
-            return output_p.argmax(dim=1)[0], [0]
+            return torch.zeros(ini_query_image_size, dtype=torch.int64), [0]
         
         # get bbox from pred
         if self.use_bbox:
