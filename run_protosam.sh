@@ -8,7 +8,7 @@ MODEL_NAME='dinov2_l14' # relevant for ALPNET, aviailable: dinov2_l14, dinov2_l1
 COARSE_PRED_ONLY="False" # True will output the coarse segmentation result 
 PROTOSAM_SAM_VER="sam_h" # available: sam_h, sam_b, medsam
 INPUT_SIZE=256 # resolution
-ORGAN="rk" # relevant for MRI and CT, available: rk, lk, liver, spleen
+ORGAN="liver" # relevant for MRI and CT, available: rk, lk, liver, spleen
 
 # get modality as arg
 MODALITY=$1
