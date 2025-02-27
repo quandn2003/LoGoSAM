@@ -16,7 +16,7 @@ import math
 FG_PROT_MODE = 'gridconv+' # using both local and global prototype
 # FG_PROT_MODE = 'mask'
 # using local prototype only. Also 'mask' refers to using global prototype only (as done in vanilla PANet)
-BG_PROT_MODE = 'gridconv+'
+BG_PROT_MODE = 'gridconv'
 
 # thresholds for deciding class of prototypes
 FG_THRESH = 0.95

@@ -107,29 +107,29 @@ class MultiProtoAsConv(nn.Module):
 
         elif mode == 'gridconv':
             nch = sup_x.shape[1]
-
-            sup_nshot = sup_x.shape[0]
-            # if len(sup_x.shape) > 4:
-            #     sup_x = sup_x.squeeze()
             n_sup_x = F.avg_pool2d(sup_x, val_wsize) if isval else self.avg_pool_op( sup_x  )
-            n_sup_x = n_sup_x.view(sup_nshot, nch, -1).permute(0,2,1).unsqueeze(0) # way(1),nb, hw, nc
+            sup_nshot = sup_x.shape[0]
+            n_sup_x = n_sup_x.view(sup_nshot, nch, -1).permute(0,2,1).unsqueeze(0)
             n_sup_x = n_sup_x.reshape(1, -1, nch).unsqueeze(0)
-
             sup_y_g = F.avg_pool2d(sup_y, val_wsize) if isval else self.avg_pool_op(sup_y)
             
             # get a grid of prototypes
             proto_grid = sup_y_g.clone().detach()
             proto_grid[proto_grid < thresh] = 0
-            # interpolate the grid to the original size
             non_zero = torch.nonzero(proto_grid)
-            
+            for i, idx in enumerate(non_zero):
+                proto_grid[0, idx[1], idx[2], idx[3]] = i + 1
             resized_proto_grid = torch.zeros([1, 1, proto_grid.shape[2]*val_wsize, proto_grid.shape[3]*val_wsize])
             for index in non_zero:
                 resized_proto_grid[0, 0, index[2]*val_wsize:index[2]*val_wsize + val_wsize, index[3]*val_wsize:index[3]*val_wsize + 2] = proto_grid[0, 0, index[2], index[3]]
             
             sup_y_g = sup_y_g.view( sup_nshot, 1, -1  ).permute(1, 0, 2).view(1, -1).unsqueeze(0)
-            protos = n_sup_x[sup_y_g > thresh, :] # npro, nc
-            pro_n = safe_norm(protos)
+            protos = n_sup_x[sup_y_g > thresh, :]
+
+            glb_proto = torch.sum(sup_x * sup_y, dim=(-1, -2)) \
+                / (sup_y.sum(dim=(-1, -2)) + 1e-5)
+
+            pro_n = safe_norm(torch.cat( [protos, 0.1*glb_proto], dim = 0 ))
             
         elif mode == 'gridconv+':
             nch = sup_x.shape[1]
