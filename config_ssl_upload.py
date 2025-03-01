@@ -97,7 +97,7 @@ def cfg():
     use_pos_enc=False
     support_txt_file = None # path to a txt file containing support slices
     augment_support_set=False
-    coarse_pred_only=False # for ProtoSAM 
+    coarse_pred_only=True # for ProtoSAM 
     point_mode="both" # for ProtoSAM, choose: both, conf, centroid
     use_neg_points=False
     n_support=1 # num support images
