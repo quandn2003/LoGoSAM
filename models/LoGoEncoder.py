@@ -279,6 +279,7 @@ class LoGoEncoder(nn.Module):
             nn.Conv2d(32, 32, kernel_size=1, stride=1, padding=0),
             CBAM(channels=32)
         )
+        self.layer_norm = nn.LayerNorm([512, 64, 64])
         
     def forward(self, x):
         img_size = x.shape[-1]  # 256
@@ -287,7 +288,8 @@ class LoGoEncoder(nn.Module):
         x = self.conv1(x)       # 256x256 -> 64x64
 
         x = self.layer(x)
-        
+        x = self.layer_norm(x)
+        #LOCAL FROM THIS
         x_loc = x.clone()       # Shape: [1, 32, 64, 64]
         patch_size = img_size // 4  # 64
         output_size = x_loc.shape[-1] // 4  # 16
@@ -308,10 +310,10 @@ class LoGoEncoder(nn.Module):
                 x_loc[:, :,
                       output_size*i:output_size*(i+1),
                       output_size*j:output_size*(j+1)] = x_p
-        
-        x = torch.add(x, x_loc)
-        x = self.adjust_p(x)
-        
+        #COMBINE LOCAL AND GLOBAL
+        x_loc = self.layer_norm(x_loc)
+        x = torch.add(x, x_loc)  ## Shape: [1, 32, 64, 64]
+        x = self.adjust_p(x) #CBAM
         x = self.bn1(x)
         x = self.relu(x)
         
