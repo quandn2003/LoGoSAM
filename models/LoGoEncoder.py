@@ -242,45 +242,47 @@ class LoGoEncoder(nn.Module):
         self.norm_layer = nn.BatchNorm2d
         self.conv1 = nn.Sequential(
             # Layer 1: 256x256 -> 128x128
-            nn.Conv2d(3, 32, kernel_size=3, stride=2, padding=1),
-            nn.BatchNorm2d(32),
+            nn.Conv2d(3, 256, kernel_size=3, stride=2, padding=1),
+            nn.BatchNorm2d(256),
             nn.ReLU(),
             
             # Layer 2: 128x128 -> 64x64
-            nn.Conv2d(32, 32, kernel_size=3, stride=2, padding=1),
-            nn.BatchNorm2d(32),
+            nn.Conv2d(256, 512, kernel_size=3, stride=2, padding=1, bias = True),
+            nn.BatchNorm2d(512),
             nn.ReLU(),
         )
         
-        self.bn1 = self.norm_layer(32)
+        self.bn1 = self.norm_layer(512)
         self.conv1_p = nn.Sequential(
-            nn.Conv2d(3, 32, kernel_size=3, stride=2, padding=1),
-            nn.BatchNorm2d(32),
+            nn.Conv2d(3, 256, kernel_size=3, stride=2, padding=1),
+            nn.BatchNorm2d(256),
             nn.ReLU(),
             
-            nn.Conv2d(32, 32, kernel_size=3, stride=2, padding=1),
-            nn.BatchNorm2d(32),
+            nn.Conv2d(256, 512, kernel_size=3, stride=2, padding=1, bias = True),
+            nn.BatchNorm2d(512),
             nn.ReLU(),
         )
-        self.bn1_p = self.norm_layer(32)
+        self.bn1_p = self.norm_layer(512)
         self.relu = nn.ReLU(inplace=True)
         
         self.layer = AxialBlock_gated_data(
-                        inplanes=32,     
-                        planes=32,   
+                        inplanes=512,     
+                        planes=512,   
                         kernel_size=64
                     )
         self.layer_p = AxialBlock_gated_data(
-                        inplanes=32,     
-                        planes=32,   
+                        inplanes=512,     
+                        planes=512,   
                         kernel_size=16
                     )
         self.adjust_p = nn.Sequential(
-            nn.Conv2d(32, 32, kernel_size=1, stride=1, padding=0),
+            nn.Conv2d(512, 512, kernel_size=1, stride=1, padding=0),
             CBAM(channels=32)
         )
         self.layer_norm = nn.LayerNorm([512, 64, 64])
-        
+
+        self.position_embeddings = nn.Parameter(torch.randn(4, 4, 512))
+
     def forward(self, x):
         img_size = x.shape[-1]  # 256
         
@@ -305,6 +307,10 @@ class LoGoEncoder(nn.Module):
                 x_p = self.conv1_p(x_p)
 
                 x_p = self.layer_p(x_p)  # Shape: [1, 32, 16, 16]
+                # Add positional encoding
+                pos_embed = self.position_embeddings[i, j]  # Shape: [embed_dim]
+                pos_embed = pos_embed.view(1, -1, 1, 1)  # Reshape to [1, embed_dim, 1, 1] for broadcasting
+                x_p += pos_embed 
                 
                 # Place processed patch in correct location
                 x_loc[:, :,
