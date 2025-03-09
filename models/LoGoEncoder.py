@@ -164,7 +164,7 @@ class AxialBlock_gated_data(nn.Module):
         self.width_block = AxialAttention_gated_data(width, width, groups=groups, kernel_size=kernel_size, stride=stride, width=True)
         self.conv_up = conv1x1(width, planes * self.expansion)
         self.bn2 = norm_layer(planes * self.expansion)
-        self.relu = nn.ReLU(inplace=True)
+        self.relu = nn.ReLU(inplace=False)
         self.downsample = downsample
         self.stride = stride
 
@@ -201,7 +201,7 @@ class ChannelAttention(nn.Module):
         
         self.fc = nn.Sequential(
             nn.Linear(in_channels, in_channels // reduction_ratio),
-            nn.ReLU(inplace=True),
+            nn.ReLU(inplace=False),
             nn.Linear(in_channels // reduction_ratio, in_channels)
         )
         
@@ -263,7 +263,7 @@ class LoGoEncoder(nn.Module):
             nn.ReLU(),
         )
         self.bn1_p = self.norm_layer(512)
-        self.relu = nn.ReLU(inplace=True)
+        self.relu = nn.ReLU()
         
         self.layer = AxialBlock_gated_data(
                         inplanes=512,     
@@ -292,7 +292,7 @@ class LoGoEncoder(nn.Module):
         x = self.layer(x)
         x = self.layer_norm(x)
         #LOCAL FROM THIS
-        x_loc = x.clone()       # Shape: [1, 32, 64, 64]
+        x_loc = x.clone()       # Shape: [1, 512, 64, 64]
         patch_size = img_size // 4  # 64
         output_size = x_loc.shape[-1] // 4  # 16
         
@@ -306,7 +306,7 @@ class LoGoEncoder(nn.Module):
                 # Process patch
                 x_p = self.conv1_p(x_p)
 
-                x_p = self.layer_p(x_p)  # Shape: [1, 32, 16, 16]
+                x_p = self.layer_p(x_p)  # Shape: [1, 512, 16, 16]
                 # Add positional encoding
                 pos_embed = self.position_embeddings[i, j]  # Shape: [embed_dim]
                 pos_embed = pos_embed.view(1, -1, 1, 1)  # Reshape to [1, embed_dim, 1, 1] for broadcasting
@@ -317,8 +317,9 @@ class LoGoEncoder(nn.Module):
                       output_size*i:output_size*(i+1),
                       output_size*j:output_size*(j+1)] = x_p
         #COMBINE LOCAL AND GLOBAL
+
         x_loc = self.layer_norm(x_loc)
-        x = torch.add(x, x_loc)  ## Shape: [1, 32, 64, 64]
+        x = torch.add(x, x_loc)  ## Shape: [1, 512, 64, 64]
         x = self.adjust_p(x) #CBAM
         x = self.bn1(x)
         x = self.relu(x)
