@@ -288,7 +288,7 @@ class LoGoEncoder(nn.Module):
         x = self.conv1(x)       # 256x256 -> 64x64
         x = self.layer_norm(x)
         x = self.layer(x)
-        x = self.layer_norm(x)
+        x_norm = self.layer_norm(x)
         #LOCAL FROM THIS
         x_loc = x.clone()       # Shape: [1, 512, 64, 64]
         patch_size = img_size // 4  # 64
@@ -316,10 +316,10 @@ class LoGoEncoder(nn.Module):
                       output_size*j:output_size*(j+1)] = x_p
         #COMBINE LOCAL AND GLOBAL
 
-        x_loc = self.layer_norm(x_loc)
-        x = torch.add(x, x_loc)  ## Shape: [1, 512, 64, 64]
-        x = self.adjust_p(x) #CBAM
-        x = self.layer_norm(x)
-        x = self.relu(x)
+        x_loc_norm = self.layer_norm(x_loc)
+        x_combine = torch.add(x_norm, x_loc_norm)  ## Shape: [1, 512, 64, 64]
+        x_combine = self.adjust_p(x_combine) #CBAM
+        x_combine = self.layer_norm(x_combine)
+        out = self.relu(x_combine)
         
-        return x
+        return out
