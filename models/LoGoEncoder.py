@@ -239,46 +239,50 @@ class CBAM(nn.Module):
 class LoGoEncoder(nn.Module):
     def __init__(self):
         super(LoGoEncoder, self).__init__() 
-        self.norm_layer = nn.BatchNorm2d
+        self.norm_layer = nn.LayerNorm
         self.conv1 = nn.Sequential(
             # Layer 1: 256x256 -> 128x128
-            nn.Conv2d(3, 32, kernel_size=3, stride=2, padding=1),
-            nn.BatchNorm2d(32),
+            nn.Conv2d(3, 256, kernel_size=3, stride=2, padding=1),
+            nn.LayerNorm([256, 128, 128]),
             nn.ReLU(),
             
             # Layer 2: 128x128 -> 64x64
-            nn.Conv2d(32, 32, kernel_size=3, stride=2, padding=1),
-            nn.BatchNorm2d(32),
+            nn.Conv2d(256, 512, kernel_size=3, stride=2, padding=1),
+            nn.LayerNorm([512, 64, 64]),
             nn.ReLU(),
         )
         
-        self.bn1 = self.norm_layer(32)
+        self.bn1 = self.norm_layer(512)
         self.conv1_p = nn.Sequential(
-            nn.Conv2d(3, 32, kernel_size=3, stride=2, padding=1),
-            nn.BatchNorm2d(32),
+            nn.Conv2d(3, 256, kernel_size=3, stride=2, padding=1),
+            nn.LayerNorm([256, 32, 32]),
             nn.ReLU(),
             
-            nn.Conv2d(32, 32, kernel_size=3, stride=2, padding=1),
-            nn.BatchNorm2d(32),
+            nn.Conv2d(256, 512, kernel_size=3, stride=2, padding=1),
+            nn.LayerNorm([512, 16, 16]),
             nn.ReLU(),
         )
-        self.bn1_p = self.norm_layer(32)
-        self.relu = nn.ReLU(inplace=True)
+        self.bn1_p = self.norm_layer(512)
+        self.relu = nn.ReLU()
         
         self.layer = AxialBlock_gated_data(
-                        inplanes=32,     
-                        planes=32,   
+                        inplanes=512,     
+                        planes=512,   
                         kernel_size=64
                     )
         self.layer_p = AxialBlock_gated_data(
-                        inplanes=32,     
-                        planes=32,   
+                        inplanes=512,     
+                        planes=512,   
                         kernel_size=16
                     )
         self.adjust_p = nn.Sequential(
-            nn.Conv2d(32, 32, kernel_size=1, stride=1, padding=0),
-            CBAM(channels=32)
+            nn.Conv2d(512, 512, kernel_size=1, stride=1, padding=0),
+            CBAM(channels=512)
         )
+        
+        self.layer_norm = nn.LayerNorm([512, 64, 64])
+        self.layer_norm_p = nn.LayerNorm([512, 16, 16])
+        self.position_embeddings = nn.Parameter(torch.randn(4, 4, 512))
         
     def forward(self, x):
         img_size = x.shape[-1]  # 256
@@ -287,8 +291,9 @@ class LoGoEncoder(nn.Module):
         x = self.conv1(x)       # 256x256 -> 64x64
 
         x = self.layer(x)
+        x_norm = self.layer_norm(x)
         
-        x_loc = x.clone()       # Shape: [1, 32, 64, 64]
+        x_loc = x.clone()       # Shape: [1, 512, 64, 64]
         patch_size = img_size // 4  # 64
         output_size = x_loc.shape[-1] // 4  # 16
         
@@ -302,17 +307,24 @@ class LoGoEncoder(nn.Module):
                 # Process patch
                 x_p = self.conv1_p(x_p)
 
-                x_p = self.layer_p(x_p)  # Shape: [1, 32, 16, 16]
+                x_p = self.layer_p(x_p)  # Shape: [1, 512, 16, 16]
+                
+                # Add position embeddings
+                pos_embed = self.position_embeddings[i, j]
+                pos_embed = pos_embed.view(1, -1, 1, 1)
+                x_p_pos = x_p + pos_embed
+
                 
                 # Place processed patch in correct location
                 x_loc[:, :,
                       output_size*i:output_size*(i+1),
-                      output_size*j:output_size*(j+1)] = x_p
+                      output_size*j:output_size*(j+1)] = x_p_pos
+                
+                
+        x_loc_norm = self.layer_norm(x_loc)
+        x_combine = torch.add(x_norm, x_loc_norm)  ## Shape: [1, 512, 64, 64]
+        x_combine = self.adjust_p(x_combine) #CBAM
+        x_combine = self.layer_norm(x_combine)
+        out = self.relu(x_combine)
         
-        x = torch.add(x, x_loc)
-        x = self.adjust_p(x)
-        
-        x = self.bn1(x)
-        x = self.relu(x)
-        
-        return x
+        return out
