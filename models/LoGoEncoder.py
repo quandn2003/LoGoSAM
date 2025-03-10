@@ -308,12 +308,12 @@ class LoGoEncoder(nn.Module):
                 # Add positional encoding
                 pos_embed = self.position_embeddings[i, j]  # Shape: [embed_dim]
                 pos_embed = pos_embed.view(1, -1, 1, 1)  # Reshape to [1, embed_dim, 1, 1] for broadcasting
-                x_p += pos_embed 
+                x_p_pos = x_p +  pos_embed 
                 
                 # Place processed patch in correct location
                 x_loc[:, :,
                       output_size*i:output_size*(i+1),
-                      output_size*j:output_size*(j+1)] = x_p
+                      output_size*j:output_size*(j+1)] = x_p_pos 
         #COMBINE LOCAL AND GLOBAL
 
         x_loc_norm = self.layer_norm(x_loc)
