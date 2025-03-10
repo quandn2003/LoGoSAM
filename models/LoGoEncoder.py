@@ -207,7 +207,7 @@ class ChannelAttention(nn.Module):
         avg_out = self.fc(self.avg_pool(x).view(x.size(0), -1))
         max_out = self.fc(self.max_pool(x).view(x.size(0), -1))
         out = avg_out + max_out
-        return torch.nn.ReLU()(out).unsqueeze(2).unsqueeze(3)
+        return torch.nn.ReLU(inplace=False)(out).unsqueeze(2).unsqueeze(3)
 
 class SpatialAttention(nn.Module):
     def __init__(self, kernel_size=7):
@@ -220,7 +220,7 @@ class SpatialAttention(nn.Module):
         max_out, _ = torch.max(x, dim=1, keepdim=True)
         x = torch.cat([avg_out, max_out], dim=1)
         x = self.conv(x)
-        return torch.nn.ReLU()(x)
+        return torch.nn.ReLU(inplace=False)(x)
 
 class CBAM(nn.Module):
     def __init__(self, channels):
@@ -242,26 +242,26 @@ class LoGoEncoder(nn.Module):
             # Layer 1: 256x256 -> 128x128
             nn.Conv2d(3, 256, kernel_size=3, stride=2, padding=1),
             #nn.BatchNorm2d(256),
-            nn.ReLU(),
+            nn.ReLU(inplace=False), 
             
             # Layer 2: 128x128 -> 64x64
             nn.Conv2d(256, 512, kernel_size=3, stride=2, padding=1, bias = True),
             #nn.BatchNorm2d(512),
-            nn.ReLU(),
+            nn.ReLU(inplace=False), 
         )
         
         self.bn1 = self.norm_layer(512)
         self.conv1_p = nn.Sequential(
             nn.Conv2d(3, 256, kernel_size=3, stride=2, padding=1),
             #nn.BatchNorm2d(256),
-            nn.ReLU(),
+            nn.ReLU(inplace=False), 
             
             nn.Conv2d(256, 512, kernel_size=3, stride=2, padding=1, bias = True),
             #nn.BatchNorm2d(512),
-            nn.ReLU(),
+            nn.ReLU(inplace=False), 
         )
         self.bn1_p = self.norm_layer(512)
-        self.relu = nn.ReLU()
+        self.relu = nn.ReLU(inplace=False)
         
         self.layer = AxialBlock_gated_data(
                         inplanes=512,     
