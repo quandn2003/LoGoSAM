@@ -148,6 +148,7 @@ class AxialAttention_gated_data(nn.Module):
         self.qkv_transform.weight.data.normal_(0, math.sqrt(1. / self.in_planes))
         #nn.init.uniform_(self.relative, -0.1, 0.1)
         nn.init.normal_(self.relative, 0., math.sqrt(1. / self.group_planes))
+        
 class AxialBlock_gated_data(nn.Module):
     expansion = 1
 
@@ -164,7 +165,7 @@ class AxialBlock_gated_data(nn.Module):
         self.width_block = AxialAttention_gated_data(width, width, groups=groups, kernel_size=kernel_size, stride=stride, width=True)
         self.conv_up = conv1x1(width, planes * self.expansion)
         self.bn2 = norm_layer(planes * self.expansion)
-        self.relu = nn.ReLU(inplace=False)
+        self.relu = nn.ReLU(inplace=False)  # Changed from True to False
         self.downsample = downsample
         self.stride = stride
 
@@ -177,15 +178,12 @@ class AxialBlock_gated_data(nn.Module):
 
         # 2 layers: hight and width
         out = self.hight_block(out)
-
         out = self.width_block(out)
-
         out = self.relu(out)
 
         out = self.conv_up(out)
         out = self.bn2(out)
-       
-        out = self.relu(out)
+        out = self.relu(out)  # Changed from in-place to not in-place
 
         return out
         
@@ -243,23 +241,23 @@ class LoGoEncoder(nn.Module):
         self.conv1 = nn.Sequential(
             # Layer 1: 256x256 -> 128x128
             nn.Conv2d(3, 256, kernel_size=3, stride=2, padding=1),
-            nn.BatchNorm2d(256),
+            #nn.BatchNorm2d(256),
             nn.ReLU(),
             
             # Layer 2: 128x128 -> 64x64
             nn.Conv2d(256, 512, kernel_size=3, stride=2, padding=1, bias = True),
-            nn.BatchNorm2d(512),
+            #nn.BatchNorm2d(512),
             nn.ReLU(),
         )
         
         self.bn1 = self.norm_layer(512)
         self.conv1_p = nn.Sequential(
             nn.Conv2d(3, 256, kernel_size=3, stride=2, padding=1),
-            nn.BatchNorm2d(256),
+            #nn.BatchNorm2d(256),
             nn.ReLU(),
             
             nn.Conv2d(256, 512, kernel_size=3, stride=2, padding=1, bias = True),
-            nn.BatchNorm2d(512),
+            #nn.BatchNorm2d(512),
             nn.ReLU(),
         )
         self.bn1_p = self.norm_layer(512)
@@ -280,7 +278,7 @@ class LoGoEncoder(nn.Module):
             CBAM(channels=512)
         )
         self.layer_norm = nn.LayerNorm([512, 64, 64])
-
+        self.layer_norm_p = nn.LayerNorm([512, 16, 16])
         self.position_embeddings = nn.Parameter(torch.randn(4, 4, 512))
 
     def forward(self, x):
@@ -288,7 +286,7 @@ class LoGoEncoder(nn.Module):
         
         xin = x.clone()
         x = self.conv1(x)       # 256x256 -> 64x64
-
+        x = self.layer_norm(x)
         x = self.layer(x)
         x = self.layer_norm(x)
         #LOCAL FROM THIS
@@ -305,7 +303,7 @@ class LoGoEncoder(nn.Module):
                 
                 # Process patch
                 x_p = self.conv1_p(x_p)
-
+                x_p = self.layer_norm_p(x_p)
                 x_p = self.layer_p(x_p)  # Shape: [1, 512, 16, 16]
                 # Add positional encoding
                 pos_embed = self.position_embeddings[i, j]  # Shape: [embed_dim]
@@ -321,7 +319,7 @@ class LoGoEncoder(nn.Module):
         x_loc = self.layer_norm(x_loc)
         x = torch.add(x, x_loc)  ## Shape: [1, 512, 64, 64]
         x = self.adjust_p(x) #CBAM
-        x = self.bn1(x)
+        x = self.layer_norm(x)
         x = self.relu(x)
         
         return x
