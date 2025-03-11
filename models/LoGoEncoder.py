@@ -276,7 +276,7 @@ class LoGoEncoder(nn.Module):
                     )
         self.adjust_p = nn.Sequential(
             nn.Conv2d(1024, 1024, kernel_size=1, stride=1, padding=0),
-            CBAM(channels=512)
+            CBAM(channels=1024)
         )
         self.layer_norm = nn.LayerNorm([1024, 64, 64])
         self.layer_norm_p = nn.LayerNorm([1024, 16, 16])
