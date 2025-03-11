@@ -240,46 +240,47 @@ class LoGoEncoder(nn.Module):
         self.norm_layer = nn.BatchNorm2d
         self.conv1 = nn.Sequential(
             # Layer 1: 256x256 -> 128x128
-            nn.Conv2d(3, 256, kernel_size=3, stride=2, padding=1),
+            nn.Conv2d(3, 512, kernel_size=3, stride=2, padding=1),
             #nn.BatchNorm2d(256),
             nn.ReLU(inplace=False), 
             
             # Layer 2: 128x128 -> 64x64
-            nn.Conv2d(256, 512, kernel_size=3, stride=2, padding=1, bias = True),
+            nn.Conv2d(512, 1024, kernel_size=3, stride=2, padding=1, bias = True),
             #nn.BatchNorm2d(512),
             nn.ReLU(inplace=False), 
         )
         
-        self.bn1 = self.norm_layer(512)
+        self.bn1 = self.norm_layer(1024)
         self.conv1_p = nn.Sequential(
-            nn.Conv2d(3, 256, kernel_size=3, stride=2, padding=1),
+            nn.Conv2d(3, 512, kernel_size=3, stride=2, padding=1),
             #nn.BatchNorm2d(256),
             nn.ReLU(inplace=False), 
             
-            nn.Conv2d(256, 512, kernel_size=3, stride=2, padding=1, bias = True),
+            # Layer 2: 128x128 -> 64x64
+            nn.Conv2d(512, 1024, kernel_size=3, stride=2, padding=1, bias = True),
             #nn.BatchNorm2d(512),
             nn.ReLU(inplace=False), 
         )
-        self.bn1_p = self.norm_layer(512)
+        self.bn1_p = self.norm_layer(1024)
         self.relu = nn.ReLU(inplace=False)
         
         self.layer = AxialBlock_gated_data(
-                        inplanes=512,     
-                        planes=512,   
+                        inplanes=1024,     
+                        planes=1024,   
                         kernel_size=64
                     )
         self.layer_p = AxialBlock_gated_data(
-                        inplanes=512,     
-                        planes=512,   
+                        inplanes=1024,     
+                        planes=1024,   
                         kernel_size=16
                     )
         self.adjust_p = nn.Sequential(
-            nn.Conv2d(512, 512, kernel_size=1, stride=1, padding=0),
+            nn.Conv2d(1024, 1024, kernel_size=1, stride=1, padding=0),
             CBAM(channels=512)
         )
-        self.layer_norm = nn.LayerNorm([512, 64, 64])
-        self.layer_norm_p = nn.LayerNorm([512, 16, 16])
-        self.position_embeddings = nn.Parameter(torch.randn(4, 4, 512))
+        self.layer_norm = nn.LayerNorm([1024, 64, 64])
+        self.layer_norm_p = nn.LayerNorm([1024, 16, 16])
+        self.position_embeddings = nn.Parameter(torch.randn(4, 4, 1024))
 
     def forward(self, x):
         img_size = x.shape[-1]  # 256
