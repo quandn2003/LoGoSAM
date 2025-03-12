@@ -240,24 +240,24 @@ class LoGoEncoder(nn.Module):
         self.norm_layer = nn.BatchNorm2d
         self.conv1 = nn.Sequential(
             # Layer 1: 256x256 -> 128x128
-            nn.Conv2d(3, 512, kernel_size=3, stride=2, padding=1),
+            nn.Conv2d(3, 1024, kernel_size=3, stride=2, padding=1),
             #nn.BatchNorm2d(256),
             nn.ReLU(inplace=False), 
             
             # Layer 2: 128x128 -> 64x64
-            nn.Conv2d(512, 1024, kernel_size=3, stride=2, padding=1, bias = True),
+            nn.Conv2d(1024, 1024, kernel_size=3, stride=2, padding=1, bias = True),
             #nn.BatchNorm2d(512),
             nn.ReLU(inplace=False), 
         )
         
         self.bn1 = self.norm_layer(1024)
         self.conv1_p = nn.Sequential(
-            nn.Conv2d(3, 512, kernel_size=3, stride=2, padding=1),
+            nn.Conv2d(3, 1024, kernel_size=3, stride=2, padding=1),
             #nn.BatchNorm2d(256),
             nn.ReLU(inplace=False), 
             
             # Layer 2: 128x128 -> 64x64
-            nn.Conv2d(512, 1024, kernel_size=3, stride=2, padding=1, bias = True),
+            nn.Conv2d(1024, 1024, kernel_size=3, stride=2, padding=1, bias = True),
             #nn.BatchNorm2d(512),
             nn.ReLU(inplace=False), 
         )
