@@ -29,16 +29,7 @@ def conv1x1(in_planes, out_planes, stride=1):
         """1x1 convolution"""
         return nn.Conv2d(in_planes, out_planes, kernel_size=1, stride=stride, bias=False)
 
-class DyT(nn.Module):
-    def __init__(self, num_features, alpha_init_value=0.5):
-        super().__init__()
-        self.alpha = nn.Parameter(torch.ones(1) * alpha_init_value)
-        self.weight = nn.Parameter(torch.ones(num_features))
-        self.bias = nn.Parameter(torch.zeros(num_features))
-    
-    def forward(self, x):
-        x = torch.tanh(self.alpha * x)
-        return x * self.weight + self.bias
+
     
 class AxialAttention_gated_data(nn.Module):
     def __init__(self, in_planes, out_planes, groups=8, kernel_size=64,
