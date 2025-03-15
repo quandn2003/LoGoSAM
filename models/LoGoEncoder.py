@@ -78,7 +78,7 @@ class AxialAttention_gated_data(nn.Module):
         self.register_buffer('flatten_index', relative_index.view(-1))
         if stride > 1:
             self.pooling = nn.AvgPool2d(stride, stride=stride)
-        self.dyt= DyT()
+        
         self.reset_parameters()
         
         # self.print_para()
@@ -108,8 +108,8 @@ class AxialAttention_gated_data(nn.Module):
         # Transformations
         # import pdb
         # pdb.set_trace()
-        # qkv = self.bn_qkv(self.qkv_transform(x))
-        qkv = self.dyt(self.qkv_transform(x))
+        qkv = self.bn_qkv(self.qkv_transform(x))
+        
         q, k, v = torch.split(qkv.reshape(N * W, self.groups, self.group_planes * 2, H), [self.group_planes // 2, self.group_planes // 2, self.group_planes], dim=2)
 
         # Calculate position embedding
@@ -131,8 +131,8 @@ class AxialAttention_gated_data(nn.Module):
         # kr = torch.mul(kr, torch.sigmoid(self.f_kr))
 
         stacked_similarity = torch.cat([qk, qr, kr], dim=1)
-        stacked_similarity = self.dyt(stacked_similarity).view(N * W, 3, self.groups, H, H).sum(dim=1)
-        #stacked_similarity = self.bn_similarity(stacked_similarity).view(N * W, 3, self.groups, H, H).sum(dim=1)
+        
+        stacked_similarity = self.bn_similarity(stacked_similarity).view(N * W, 3, self.groups, H, H).sum(dim=1)
         #stacked_similarity = self.bn_qr(qr) + self.bn_kr(kr) + self.bn_qk(qk)
         # (N, groups, H, H, W)
         similarity = F.softmax(stacked_similarity, dim=3)
@@ -146,8 +146,8 @@ class AxialAttention_gated_data(nn.Module):
         sve = sig4.reshape(-1, 1, 1, 1).contiguous()*sve
 
         stacked_output = torch.cat([sv, sve], dim=-1).view(N * W, self.out_planes * 2, H)
-        #output = self.bn_output(stacked_output).view(N, W, self.out_planes, 2, H).sum(dim=-2)
-        output = self.dyt(stacked_output).view(N, W, self.out_planes, 2, H).sum(dim=-2)
+        output = self.bn_output(stacked_output).view(N, W, self.out_planes, 2, H).sum(dim=-2)
+        
         if self.width:
             output = output.permute(0, 2, 1, 3)
         else:
@@ -184,14 +184,14 @@ class AxialBlock_gated_data(nn.Module):
         self.relu = nn.ReLU(inplace=False)  # Changed from True to False
         self.downsample = downsample
         self.stride = stride
-        self.dyt = DyT()
+        
 
     def forward(self, x):
         identity = x
 
         out = self.conv_down(x)
         #out = self.bn1(out)
-        out = self.dyt(out)
+        
         out = self.relu(out)
 
         # 2 layers: hight and width
@@ -201,7 +201,7 @@ class AxialBlock_gated_data(nn.Module):
 
         out = self.conv_up(out)
         #out = self.bn2(out)
-        out = self.dyt(out)
+        
         out = self.relu(out)  # Changed from in-place to not in-place
 
         return out
@@ -300,7 +300,7 @@ class LoGoEncoder(nn.Module):
         self.layer_norm = nn.LayerNorm([512, 64, 64])
         self.layer_norm_p = nn.LayerNorm([512, 16, 16])
         self.position_embeddings = nn.Parameter(torch.randn(4, 4, 512))
-        self.dyt = DyT()
+        
     def forward(self, x):
         img_size = x.shape[-1]  # 256
         
@@ -308,8 +308,8 @@ class LoGoEncoder(nn.Module):
         x = self.conv1(x)       # 256x256 -> 64x64
         x = self.layer_norm(x)
         x = self.layer(x)
-        #x_norm = self.layer_norm(x)
-        x_norm = self.dyt(x)
+        x_norm = self.layer_norm(x)
+        
         #LOCAL FROM THIS
         x_loc = x.clone()       # Shape: [1, 512, 64, 64]
         patch_size = img_size // 4  # 64
@@ -337,8 +337,8 @@ class LoGoEncoder(nn.Module):
                       output_size*j:output_size*(j+1)] = x_p_pos 
         #COMBINE LOCAL AND GLOBAL
 
-        #x_loc_norm = self.layer_norm(x_loc)
-        x_loc_norm = self.dyt(x_loc)
+        x_loc_norm = self.layer_norm(x_loc)
+        
         x_combine = torch.add(x_norm, x_loc_norm)  ## Shape: [1, 512, 64, 64]
         x_combine = self.adjust_p(x_combine) #CBAM
         # x_combine = self.layer_norm(x_combine)
