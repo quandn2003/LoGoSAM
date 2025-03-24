@@ -8,14 +8,14 @@ MODEL_NAME='dinov2_l14' # relevant for ALPNET, aviailable: dinov2_l14, dinov2_l1
 COARSE_PRED_ONLY="False" # True will output the coarse segmentation result 
 PROTOSAM_SAM_VER="sam_h" # available: sam_h, sam_b, medsam
 INPUT_SIZE=256 # resolution
-ORGAN="liver" # relevant for MRI and CT, available: rk, lk, liver, spleen
+ORGAN=$3 # relevant for MRI and CT, available: rk, lk, liver, spleen
 
 # get modality and labelset as args
 MODALITY=$1
 LABEL_SETS=$2  # New argument for label sets
 
 # Optional second argument for wandb project name
-WANDB_PROJECT=${3:-"LoGoSAM"}
+WANDB_PROJECT=${4:-"LoGoSAM"}
 
 PROTO_GRID=8 # using 32 / 8 = 4, 4-by-4 prototype pooling window during training
 ALL_EV=( 0 ) # 5-fold cross validation (0, 1, 2, 3, 4)
@@ -28,16 +28,6 @@ then
     exit 1
 fi
 
-# Set organ based on label sets
-if [ $LABEL_SETS -eq 1 ]
-then
-    ORGAN='liver_spleen'
-elif [ $LABEL_SETS -eq 2 ]
-then
-    ORGAN='kidney'  # This would be for kidney (both left and right)
-else
-    ORGAN='liver'  # Default case
-fi
 
 if [ $MODALITY == "ct" ]
 then

@@ -13,6 +13,7 @@ import urllib
 from tqdm.auto import tqdm
 from sklearn.decomposition import PCA
 import torchvision.transforms.functional as F
+import os
 
 
 def plot_connected_components(cca_output, original_image, confidences:dict=None, title="debug/connected_components.png"):
@@ -296,20 +297,50 @@ def load_config_from_url(url: str) -> str:
 
 
 def save_pred_gt_fig(query_images, query_pred, query_labels, support_images=None, support_labels=None, path="debug/gt_vs_pred.png"):
+    """
+    Args:
+        query_images: List containing tensor of shape [B, C, H, W]
+        query_pred: numpy array of shape [H, W]
+        query_labels: tensor of shape [B, H, W]
+        support_images: List of lists containing tensors of shape [B, C, H, W] or None
+        support_labels: List of lists containing tensors of shape [B, H, W] or None
+        path: Path to save the figure
+    """
     fig = plt.figure(figsize=(10, 5 if support_images is None else 10))
+    
+    # Handle query visualization
     ax1 = fig.add_subplot(2 if support_images is not None else 1, 2, 1)
-    ax1.imshow(query_images[0][0, 1].cpu().numpy())
+    query_img = query_images[0][0].cpu().numpy()
+    # If image has multiple channels, use the middle channel for visualization
+    if len(query_img.shape) == 3 and query_img.shape[0] > 1:
+        query_img = query_img[query_img.shape[0]//2]
+    ax1.imshow(query_img)
     ax1.imshow(query_labels[0].cpu().numpy(), alpha=0.5)
     ax1.set_title("Ground Truth")
+    
     ax2 = fig.add_subplot(2 if support_images is not None else 1, 2, 2)
-    ax2.imshow(query_images[0][0, 1].cpu().numpy())
+    ax2.imshow(query_img)
     ax2.imshow(query_pred, alpha=0.5)
     ax2.set_title("Prediction")
-    if support_images is not None:
+    
+    # Handle support visualization if provided
+    if support_images is not None and support_labels is not None:
         ax3 = fig.add_subplot(2, 2, 3)
-        ax3.imshow(support_images[0][0, 1].cpu().numpy())
-        ax3.imshow(support_labels[0].cpu().numpy(), alpha=0.5)
+        # Handle nested list structure
+        support_img = support_images[0][0].cpu().numpy()  # First way, first part, first shot
+        if len(support_img.shape) == 3 and support_img.shape[0] > 1:
+            support_img = support_img[support_img.shape[0]//2]
+        ax3.imshow(support_img)
+        
+        # Handle support labels - ensure it's 2D
+        support_mask = support_labels[0].cpu().numpy()
+        if len(support_mask.shape) == 3:  # If it's [1, H, W], squeeze it to [H, W]
+            support_mask = support_mask.squeeze(0)
+        ax3.imshow(support_mask, alpha=0.5)
         ax3.set_title("Support")
+    
+    # Save and close
+    os.makedirs(os.path.dirname(path), exist_ok=True)
     plt.savefig(path)
     plt.close('all')
     

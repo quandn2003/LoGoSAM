@@ -413,7 +413,7 @@ def main(_run, _config, _log):
         support_data = get_support_set_polyps(_config, polyp_ds)
     else:
         # MedicalDataset
-        val_set = get_nii_dataset(_config)
+        _, val_set = get_nii_dataset(_config, _config["input_size"][0])
         support_data = get_support_set_alpds(_config, val_set)
         _log.info('Loading ALP dataset')
     
@@ -426,7 +426,7 @@ def main(_run, _config, _log):
         drop_last=False
     )
     
-    all_support_images, all_support_fg_mask = support_data
+    all_support_images, all_support_fg_mask, support_scan_id  = support_data
     
     _log.info('###### Setup Model ######')
     if _config["base_model"] == "alpnet":
@@ -437,7 +437,7 @@ def main(_run, _config, _log):
         raise ValueError(f"Unsupported segmentor model type: {_config['base_model']}")
         
     model = get_model(_config)
-    model.build(model_wrapper)
+    # model.build(model_wrapper)
     model = model.to(device)
     model.eval()
 
