@@ -21,11 +21,88 @@ import dataloaders.augutils as myaug
 from util.utils import set_seed, t2n, to01, compose_wt_simple
 from util.metric import Metric
 
+import wandb
+wandb.login(key="cb3c663e48e7f5e8ea89cbd09b4377b857855e95")
+import matplotlib.pyplot as plt
 from config_ssl_upload import ex
 from tqdm.auto import tqdm
 # import Tensor
 from torch import Tensor
 from typing import List, Tuple, Union, cast, Iterable, Set, Any, Callable, TypeVar
+
+def initialize_wandb(config, run_name=None):
+    """Initialize wandb for experiment tracking"""
+    if not config.get('wandb_enabled', True):
+        return None
+        
+    if run_name is None:
+        run_name = f"{config['dataset']}_{config['model']['which_model']}"
+    
+    print(f"run_name: {run_name}")
+    
+    print(f"Project: {config.get('wandb_project', 'LoGoSAM')}")
+    
+    wandb_run = wandb.init(
+        project=config.get('wandb_project', "LoGoSAM"),
+        name=run_name,
+        config=config,
+        reinit=True
+    )
+    return wandb_run
+
+def log_visualization_to_wandb(query_images, query_pred, query_labels, support_images, support_fg_mask, iteration, phase="train"):
+    """Log visualizations to wandb"""
+    # Log a sample visualization
+    fig, axes = plt.subplots(2, 3, figsize=(15, 10))
+    fig.suptitle(f"Sample visualization (iteration {iteration})")
+    
+    # Convert tensors to numpy arrays for visualization
+    query_img = t2n(query_images[0][0].permute(1, 2, 0))
+    query_img = to01(query_img)
+    
+    # Get the predicted segmentation mask
+    pred_mask = t2n(torch.sigmoid(query_pred[0, 0]))
+    
+    # Ground truth mask
+    gt_mask = t2n(query_labels[0])
+    
+    # Support image and mask
+    support_img = t2n(support_images[0][0][0].permute(1, 2, 0))
+    support_img = to01(support_img)
+    support_mask = t2n(support_fg_mask[0][0][0])
+    
+    # Visualize
+    axes[0, 0].imshow(query_img)
+    axes[0, 0].set_title("Query Image")
+    axes[0, 0].axis('off')
+    
+    axes[0, 1].imshow(pred_mask, cmap='jet')
+    axes[0, 1].set_title("Prediction Heatmap")
+    axes[0, 1].axis('off')
+    
+    axes[0, 2].imshow(query_img)
+    axes[0, 2].imshow(pred_mask > 0.5, alpha=0.5, cmap='Reds')
+    axes[0, 2].set_title("Prediction Overlay")
+    axes[0, 2].axis('off')
+    
+    axes[1, 0].imshow(gt_mask, cmap='gray')
+    axes[1, 0].set_title("Ground Truth")
+    axes[1, 0].axis('off')
+    
+    axes[1, 1].imshow(support_img)
+    axes[1, 1].set_title("Support Image")
+    axes[1, 1].axis('off')
+    
+    axes[1, 2].imshow(support_img)
+    axes[1, 2].imshow(support_mask, alpha=0.5, cmap='Reds')
+    axes[1, 2].set_title("Support Mask Overlay")
+    axes[1, 2].axis('off')
+    
+    plt.tight_layout()
+    
+    # Log to wandb
+    wandb.log({f"{phase}_visualization": wandb.Image(fig)})
+    plt.close(fig)
 
 def get_dice_loss(prediction: torch.Tensor, target: torch.Tensor, smooth=1.0):
     '''
@@ -166,7 +243,11 @@ def main(_run, _config, _log):
 
     _log.info('###### Training ######')
     epoch_losses = []
-    for sub_epoch in range(1):
+    # Initialize wandb
+    wandb_run = initialize_wandb(_config, run_name=f"{_config['dataset']}_{_config['model']['which_model']}_train")
+    wandb_enabled = wandb_run is not None
+    print(f"n_sub_epoches: {n_sub_epoches}")
+    for sub_epoch in range(n_sub_epoches):
         _log.info(
             f'###### This is epoch {sub_epoch} of {n_sub_epoches} epoches ######')
         pbar = tqdm(trainloader)
@@ -187,18 +268,8 @@ def main(_run, _config, _log):
                 [query_label.long().to(device) for query_label in sample_batched['query_labels']], dim=0)
 
             loss = 0.0
-            # try:
-            #     out = model(support_images, support_fg_mask, support_bg_mask,
-            #             query_images, isval=False, val_wsize=None)
-            #     query_pred, align_loss, _, _, _, _, _ = out
-            #     # pred = np.array(query_pred.argmax(dim=1)[0].cpu())
-            # except Exception as e:
-            #     print(f'faulty batch detected, skip: {e}')
-            #     # offload cuda memory
-            #     del support_images, support_fg_mask, support_bg_mask, query_images, query_labels
-            #     continue
             out = model(support_images, support_fg_mask, support_bg_mask, query_images, isval=False, val_wsize=None)
-            query_pred, align_loss, _, _, _, _, _ = out
+            query_pred, align_loss, _, coarse_pred, _, _, _ = out
                  
             query_loss = criterion(query_pred.float(), query_labels.long())
             loss += query_loss + align_loss
@@ -225,6 +296,48 @@ def main(_run, _config, _log):
                 writer.add_scalar('query_loss', query_loss, i_iter)
                 writer.add_scalar('align_loss', align_loss, i_iter)
 
+                # Log metrics to wandb
+                if wandb_enabled:
+                    wandb.log({
+                        'loss': loss.item(),
+                        'query_loss': query_loss,
+                        'align_loss': align_loss,
+                        'learning_rate': optimizer.param_groups[0]['lr'],
+                        'iteration': i_iter
+                    })
+
+                    # Log visualizations to wandb every print_interval
+                    log_visualization_to_wandb(
+                        query_images,
+                        query_pred,
+                        query_labels,
+                        support_images,
+                        support_fg_mask,
+                        i_iter,
+                        phase="train"
+                    )
+                    
+                    # Log coarse segmentation if available
+                    if coarse_pred is not None:
+                        # Create figure for coarse segmentation
+                        fig, axes = plt.subplots(1, 2, figsize=(12, 6))
+                        coarse_mask = t2n(torch.sigmoid(coarse_pred[0, 0]))
+                        query_img = t2n(query_images[0][0].permute(1, 2, 0))
+                        query_img = to01(query_img)
+                        
+                        axes[0].imshow(coarse_mask, cmap='jet')
+                        axes[0].set_title("Coarse Segmentation Heatmap")
+                        axes[0].axis('off')
+                        
+                        axes[1].imshow(query_img)
+                        axes[1].imshow(coarse_mask > 0.5, alpha=0.5, cmap='Blues')
+                        axes[1].set_title("Coarse Segmentation Overlay")
+                        axes[1].axis('off')
+                        
+                        plt.tight_layout()
+                        wandb.log({'coarse_segmentation': wandb.Image(fig)})
+                        plt.close(fig)
+
                 loss = log_loss['loss'] / _config['print_interval']
                 align_loss = log_loss['align_loss'] / _config['print_interval']
 
@@ -243,3 +356,9 @@ def main(_run, _config, _log):
                 break  # finish up
         epoch_losses.append(np.mean(losses))
         print(f"Epoch {sub_epoch} loss: {np.mean(losses)}")
+        if wandb_enabled:
+            wandb.log({'epoch': sub_epoch, 'epoch_loss': np.mean(losses)})
+    
+    # Close wandb run when training is finished
+    if wandb_enabled:
+        wandb.finish()

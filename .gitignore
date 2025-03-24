@@ -6,3 +6,4 @@ test_*/
 pretrained_model/*
 data/CHAOST2/
 data/SABS/
+.cursorignore

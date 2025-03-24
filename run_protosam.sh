@@ -10,17 +10,33 @@ PROTOSAM_SAM_VER="sam_h" # available: sam_h, sam_b, medsam
 INPUT_SIZE=256 # resolution
 ORGAN="liver" # relevant for MRI and CT, available: rk, lk, liver, spleen
 
-# get modality as arg
+# get modality and labelset as args
 MODALITY=$1
+LABEL_SETS=$2  # New argument for label sets
+
+# Optional second argument for wandb project name
+WANDB_PROJECT=${3:-"LoGoSAM"}
 
 PROTO_GRID=8 # using 32 / 8 = 4, 4-by-4 prototype pooling window during training
 ALL_EV=( 0 ) # 5-fold cross validation (0, 1, 2, 3, 4)
 SEED=42
 
+# Validate modality
 if [ $MODALITY != "ct" ] && [ $MODALITY != "mri" ] && [ $MODALITY != "polyp" ]
 then
-    echo "modality must be either ct ,mri or polyp"
+    echo "modality must be either ct, mri or polyp"
     exit 1
+fi
+
+# Set organ based on label sets
+if [ $LABEL_SETS -eq 1 ]
+then
+    ORGAN='liver_spleen'
+elif [ $LABEL_SETS -eq 2 ]
+then
+    ORGAN='kidney'  # This would be for kidney (both left and right)
+else
+    ORGAN='liver'  # Default case
 fi
 
 if [ $MODALITY == "ct" ]
@@ -47,11 +63,6 @@ RELOAD_PATH=( "None" )
 SKIP_SLICES="True"
 DO_CCA="True"
 ALL_SCALE=( "MIDDLE") # config of pseudolabels
-
-if [ $MODALITY == "polyp" ]
-then
-    ORGAN="polyps"
-fi
 
 FREE_DESC=""
 CPT="${MODEL_NAME}_${MODALITY}"
@@ -119,6 +130,7 @@ do
             path.log_dir=$LOGDIR \
             support_idx=$SUPP_ID \
             lora=$LORA \
-            "input_size=($INPUT_SIZE, $INPUT_SIZE)"
+            "input_size=($INPUT_SIZE, $INPUT_SIZE)" \
+            wandb_project=$WANDB_PROJECT
     done
 done

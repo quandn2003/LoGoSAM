@@ -40,6 +40,10 @@ def cfg():
 
     dataset = 'CHAOST2_Superpix' # i.e. abdominal MRI
     use_coco_init = True # initialize backbone with MS_COCO initialization. Anyway coco does not contain medical images
+    
+    # Wandb configuration
+    wandb_project = "LoGoSAM"
+    wandb_enabled = True
 
     ### Training
     n_steps = 100100

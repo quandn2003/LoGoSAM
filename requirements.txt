@@ -72,3 +72,4 @@ wrapt==1.16.0
 tensorboard==2.19.0
 kneed==0.8.5
 sacred==0.8.4
+wandb==0.16.0

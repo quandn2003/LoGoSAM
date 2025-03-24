@@ -16,6 +16,8 @@ import torch.backends.cudnn as cudnn
 import numpy as np
 import time
 import matplotlib.pyplot as plt
+import wandb
+wandb.login(key="cb3c663e48e7f5e8ea89cbd09b4377b857855e95")
 from models.ProtoSAM import ProtoSAM,  ALPNetWrapper, SamWrapperWrapper, InputFactory, ModelWrapper, TYPE_ALPNET, TYPE_SAM
 from models.ProtoMedSAM import ProtoMedSAM
 from models.grid_proto_fewshot import FewShotSeg
@@ -282,170 +284,280 @@ def manage_support_sets(sample_batched, all_support_images, all_support_fg_mask,
     return support_images, support_fg_mask, qpart
 
 
+def initialize_wandb(config, run_name=None):
+    """Initialize wandb for experiment tracking"""
+    if not config.get('wandb_enabled', True):
+        return None
+        
+    if run_name is None:
+        run_name = f"{config['dataset']}_{config['base_model']}_inference"
+        
+    wandb_run = wandb.init(
+        project=config.get('wandb_project', "LoGoSAM"),
+        name=run_name,
+        config=config,
+        reinit=True
+    )
+    return wandb_run
+
+def log_inference_results_to_wandb(query_image, pred, gt, support_images, support_masks, raw_sam_output=None, attn=None, iteration=0):
+    """Log inference visualization to wandb"""
+    # Create figure for results visualization
+    if attn is not None:
+        fig, axes = plt.subplots(2, 3, figsize=(15, 10))
+    else:
+        fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+    
+    # Convert tensors to numpy arrays for visualization
+    query_img = query_image.cpu().numpy().transpose(1, 2, 0)
+    if query_img.shape[2] == 1:  # If grayscale, repeat channels
+        query_img = np.repeat(query_img, 3, axis=2)
+    # Normalize to 0-1 range
+    query_img = (query_img - query_img.min()) / (query_img.max() - query_img.min() + 1e-8)
+    
+    # Masks
+    pred_mask = pred.cpu().numpy()
+    gt_mask = gt.cpu().numpy()
+    
+    # Support image (first one)
+    support_img = support_images[0][0].cpu().numpy().transpose(1, 2, 0)
+    if support_img.shape[2] == 1:
+        support_img = np.repeat(support_img, 3, axis=2)
+    support_img = (support_img - support_img.min()) / (support_img.max() - support_img.min() + 1e-8)
+    
+    support_mask = support_masks[0][0].cpu().numpy()
+    
+    # Display images
+    axes[0, 0].imshow(query_img)
+    axes[0, 0].set_title("Query Image")
+    axes[0, 0].axis('off')
+    
+    axes[0, 1].imshow(pred_mask, cmap='jet')
+    axes[0, 1].set_title("Prediction")
+    axes[0, 1].axis('off')
+    
+    axes[1, 0].imshow(gt_mask, cmap='gray')
+    axes[1, 0].set_title("Ground Truth")
+    axes[1, 0].axis('off')
+    
+    axes[1, 1].imshow(support_img)
+    axes[1, 1].imshow(support_mask, alpha=0.5, cmap='Reds')
+    axes[1, 1].set_title("Support Image & Mask")
+    axes[1, 1].axis('off')
+    
+    # Add attention visualization if available
+    if attn is not None:
+        # Create heatmap from attention 
+        attention_map = attn.cpu().numpy()
+        axes[0, 2].imshow(attention_map, cmap='hot')
+        axes[0, 2].set_title("Attention Heatmap")
+        axes[0, 2].axis('off')
+        
+        # Overlay attention on query image
+        axes[1, 2].imshow(query_img)
+        axes[1, 2].imshow(attention_map, alpha=0.7, cmap='hot')
+        axes[1, 2].set_title("Attention Overlay")
+        axes[1, 2].axis('off')
+    
+    plt.tight_layout()
+    
+    # Log to wandb
+    wandb.log({f"inference_result_{iteration}": wandb.Image(fig)})
+    plt.close(fig)
+    
+    # Log raw SAM output if available
+    if raw_sam_output is not None:
+        fig, ax = plt.subplots(1, 2, figsize=(12, 6))
+        raw_output = raw_sam_output.cpu().numpy()
+        
+        ax[0].imshow(raw_output, cmap='viridis')
+        ax[0].set_title("Raw SAM Output")
+        ax[0].axis('off')
+        
+        ax[1].imshow(query_img)
+        ax[1].imshow(raw_output > 0.5, alpha=0.5, cmap='Greens')
+        ax[1].set_title("Raw SAM Output Overlay")
+        ax[1].axis('off')
+        
+        plt.tight_layout()
+        wandb.log({f"raw_sam_output_{iteration}": wandb.Image(fig)})
+        plt.close(fig)
+
+
 @ex.automain
 def main(_run, _config, _log):
-    if _run.observers:
-        os.makedirs(f'{_run.observers[0].dir}/interm_preds', exist_ok=True)
-        for source_file, _ in _run.experiment_info['sources']:
-            os.makedirs(os.path.dirname(f'{_run.observers[0].dir}/source/{source_file}'),
-                        exist_ok=True)
-            _run.observers[0].save_file(source_file, f'source/{source_file}')
-        print(f"####### created dir:{_run.observers[0].dir} #######")
-        shutil.rmtree(f'{_run.observers[0].basedir}/_sources')
-    print(f"config do_cca: {_config['do_cca']}, use_bbox: {_config['use_bbox']}")
-    cudnn.enabled = True
+    seed = _config['seed']
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    np.random.seed(seed)
     cudnn.benchmark = True
-    torch.cuda.set_device(device=_config['gpu_id'])
-    torch.set_num_threads(1)
-
-    _log.info(f'###### Reload model {_config["reload_model_path"]} ######')
-    model = get_model(_config)
-    model = model.to(torch.device("cuda"))
-    model.eval()
     
-    sam_trans = ResizeLongestSide(1024)
-    if _config["dataset"].lower() == POLYPS:
-        tr_dataset, te_dataset = get_polyp_dataset(sam_trans=sam_trans, image_size=(1024, 1024))
-    elif CHAOS in _config["dataset"].lower() or SABS in _config["dataset"].lower():
-        tr_dataset, te_dataset = get_nii_dataset(_config, _config["input_size"][0]) 
-    else:
-        raise NotImplementedError(
-            f"dataset {_config['dataset']} not implemented")
+    # Initialize wandb for inference visualization
+    wandb_run = initialize_wandb(_config, run_name=f"{_config['dataset']}_{_config['base_model']}_inference")
+    wandb_enabled = wandb_run is not None
 
-    # dataloaders
-    testloader = DataLoader(
-        te_dataset,
+    _log.info('###### Set CUDA ######')
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    
+    _log.info('###### Setup DATASET ######')
+    data_name = _config['dataset']
+    if wandb_enabled:
+        wandb.config.update({"data_name": data_name})
+    
+    if data_name == POLYPS:
+        # When using polyps dataset
+        polyp_ds = get_polyp_dataset(_config, eval=True)
+        _log.info('Loading polyp dataset')
+        
+        val_set = polyp_ds
+        support_data = get_support_set_polyps(_config, polyp_ds)
+    else:
+        # MedicalDataset
+        val_set = get_nii_dataset(_config)
+        support_data = get_support_set_alpds(_config, val_set)
+        _log.info('Loading ALP dataset')
+    
+    val_loader = DataLoader(
+        val_set,
         batch_size=1,
         shuffle=False,
-        num_workers=1,
-        pin_memory=False,
+        num_workers=_config['num_workers'],
+        pin_memory=True,
         drop_last=False
     )
-
-    _log.info('###### Starting validation ######')
+    
+    all_support_images, all_support_fg_mask = support_data
+    
+    _log.info('###### Setup Model ######')
+    if _config["base_model"] == "alpnet":
+        model_wrapper = get_alpnet_model(_config)
+    elif _config["base_model"] == "sam":
+        model_wrapper = get_sam_model(_config)
+    else:
+        raise ValueError(f"Unsupported segmentor model type: {_config['base_model']}")
+        
+    model = get_model(_config)
+    model.build(model_wrapper)
+    model = model.to(device)
     model.eval()
 
-    mean_dice = []
-    mean_prec = []
-    mean_rec = []
-    mean_iou = []
+    # Setup for calculating metrics
+    metrics = defaultdict(list)
     
-    mean_dice_cases = {}
-    mean_iou_cases = {} 
-    bboxes_w_scores = []
+    # Add timing setup
+    qids = []
+    sample_metrics = []
     
-    curr_case = None
-    supp_fts = None
-    qpart = None
-    support_images = support_fg_mask = None
-    all_support_images, all_support_fg_mask, support_scan_id = None, None, None
-    MAX_SUPPORT_IMAGES = 1
-    is_alp_ds = any(item in _config["dataset"].lower() for item in ALP_DS)
-    is_polyp_ds  = _config["dataset"].lower() == POLYPS
+    _log.info('###### Starting Validation ######')
     
-    if is_alp_ds:
-        all_support_images, all_support_fg_mask, support_scan_id = get_support_set(_config, te_dataset)
-    elif is_polyp_ds:
-        support_images, support_fg_mask, case = get_support_set_polyps(_config, tr_dataset)
-        
-    with tqdm(testloader) as pbar: 
-        for idx, sample_batched in enumerate(tqdm(testloader)):
-            case = sample_batched['case'][0]
-            if is_alp_ds: 
-                support_images, support_fg_mask, qpart = manage_support_sets(
-                                                            sample_batched,
-                                                            all_support_images,
-                                                            all_support_fg_mask,
-                                                            support_images,
-                                                            support_fg_mask,
-                                                            qpart,
-                )
+    with torch.no_grad():
+        for idx, sample_batched in enumerate(tqdm(val_loader)):
+            qid = sample_batched["id"][0] if "id" in sample_batched else idx
             
-            if is_alp_ds and sample_batched["scan_id"][0] in support_scan_id:
-                continue
-             
-            query_images = sample_batched['image'].cuda()
-            query_labels = torch.cat([sample_batched['label']], dim=0)
-            if not 1 in query_labels and _config["skip_no_organ_slices"]:
+            # Skip this sample if qid is in qids
+            if qid in qids:
                 continue
             
-            n_try = 1
-            with torch.no_grad():
-                coarse_model_input = InputFactory.create_input(
-                                        input_type=_config["base_model"],
-                                        query_image=query_images,
-                                        support_images=support_images,
-                                        support_labels=support_fg_mask,
-                                        isval=True,
-                                        val_wsize=_config["val_wsize"],
-                                        original_sz=query_images.shape[-2:],
-                                        img_sz=query_images.shape[-2:],
-                                        gts=query_labels,
+            support_images, support_fg_mask, qpart = manage_support_sets(
+                sample_batched, all_support_images, all_support_fg_mask, None, None, None
+            )
+            
+            # Images shape: 1, 3/1, H, W
+            query_image = sample_batched["image"].to(device)
+            query_mask = sample_batched["label"].to(device)
+            
+            # Record the time for measuring inference speed
+            start_time = time.time()
+            result = model.slide_inference(
+                query_image,
+                support_images,
+                support_fg_mask,
+                query_mask.shape[-2:]
+            )
+            end_time = time.time()
+            
+            # Extract results
+            pred_mask, attentions = result.pred_mask, result.attentions
+            raw_sam_output = result.raw_sam_output if hasattr(result, 'raw_sam_output') else None
+            coarse_pred = result.coarse_pred if hasattr(result, 'coarse_pred') else None
+            
+            # Calculate metrics for current sample
+            metric_dict = {}
+            metric_dict.update(get_dice_iou_precision_recall(pred_mask, query_mask))
+            
+            # Log to wandb
+            for metric_name, metric_value in metric_dict.items():
+                metrics[metric_name].append(metric_value)
+                if wandb_enabled:
+                    wandb.log({f"{metric_name}_sample_{idx}": metric_value})
+            
+            if wandb_enabled and (idx % 10 == 0 or idx < 5):
+                # Log visualizations to wandb every 10 samples and first 5 samples
+                log_inference_results_to_wandb(
+                    query_image[0],
+                    pred_mask[0],
+                    query_mask[0],
+                    support_images,
+                    support_fg_mask,
+                    raw_sam_output[0] if raw_sam_output is not None else None,
+                    attentions[0] if attentions is not None else None,
+                    idx
                 )
-                coarse_model_input.to(torch.device("cuda"))
+                
+                # If coarse prediction is available, log it too
+                if coarse_pred is not None:
+                    fig, axes = plt.subplots(1, 2, figsize=(12, 6))
                     
-                query_pred, scores = model(
-                        query_images, coarse_model_input, degrees_rotate=0)
-            query_pred = query_pred.cpu().detach()
-                
-            if _config["debug"]:
-                if is_alp_ds:
-                    save_path = f'debug/preds/{case}_{sample_batched["z_id"].item()}_{idx}_{n_try}.png'
-                    os.makedirs(os.path.dirname(save_path), exist_ok=True)
-                elif is_polyp_ds:
-                    save_path = f'debug/preds/{case}_{idx}_{n_try}.png'
-                plot_pred_gt_support(query_images[0,0].cpu(), query_pred.cpu(), query_labels[0].cpu(
-                ), support_images, support_fg_mask, save_path=save_path, score=scores[0])
-
-            metrics = get_dice_iou_precision_recall(
-                query_pred, query_labels[0].to(query_pred.device))
-            mean_dice.append(metrics["dice"])
-            mean_prec.append(metrics["precision"])
-            mean_rec.append(metrics["recall"])
-            mean_iou.append(metrics["iou"])
-
-            bboxes_w_scores.append({"pred_bbox": get_bounding_box(query_pred.cpu()),
-                                    "gt_bbox": get_bounding_box(query_labels[0].cpu()),
-                                    "score": np.mean(scores)})
+                    coarse_mask = coarse_pred[0].cpu().numpy()
+                    query_img = query_image[0].cpu().numpy().transpose(1, 2, 0)
+                    if query_img.shape[2] == 1:
+                        query_img = np.repeat(query_img, 3, axis=2)
+                    query_img = (query_img - query_img.min()) / (query_img.max() - query_img.min() + 1e-8)
+                    
+                    axes[0].imshow(coarse_mask, cmap='jet')
+                    axes[0].set_title("Coarse Segmentation")
+                    axes[0].axis('off')
+                    
+                    axes[1].imshow(query_img)
+                    axes[1].imshow(coarse_mask > 0.5, alpha=0.5, cmap='Blues')
+                    axes[1].set_title("Coarse Segmentation Overlay")
+                    axes[1].axis('off')
+                    
+                    plt.tight_layout()
+                    wandb.log({f"coarse_segmentation_{idx}": wandb.Image(fig)})
+                    plt.close(fig)
             
-            if case not in mean_dice_cases:
-                mean_dice_cases[case] = []
-                mean_iou_cases[case] = []
-            mean_dice_cases[case].append(metrics["dice"])
-            mean_iou_cases[case].append(metrics["iou"])
-
-            if metrics["dice"] < 0.6 and _config["debug"]:
-                path = f'{_run.observers[0].dir}/bad_preds/case_{case}_idx_{idx}_dice_{metrics["dice"]:.4f}.png'
-                if _config["debug"]:
-                    path = f'debug/bad_preds/case_{case}_idx_{idx}_dice_{metrics["dice"]:.4f}.png'
-                os.makedirs(os.path.dirname(path), exist_ok=True)
-                print(f"saving bad prediction to {path}")
-                plot_pred_gt_support(query_images[0,0].cpu(), query_pred.cpu(), query_labels[0].cpu(
-                    ), support_images, support_fg_mask, save_path=path, score=scores[0])
-                
-            pbar.set_postfix_str({"mdice": f"{np.mean(mean_dice):.4f}", "miou": f"{np.mean(mean_iou):.4f}, n_try: {n_try}"})
-                
-
-    for k in mean_dice_cases.keys():
-        _run.log_scalar(f'mar_val_batches_meanDice_{k}', np.mean(mean_dice_cases[k]))
-        _run.log_scalar(f'mar_val_batches_meanIOU_{k}', np.mean(mean_iou_cases[k]))
-        _log.info(f'mar_val batches meanDice_{k}: {np.mean(mean_dice_cases[k])}')
-        _log.info(f'mar_val batches meanIOU_{k}: {np.mean(mean_iou_cases[k])}') 
+            # Save the sample metrics
+            sample_metric = {
+                "id": qid,
+                "time": end_time - start_time,
+                **metric_dict
+            }
+            sample_metrics.append(sample_metric)
+            qids.append(qid)
     
-    # write validation result to log file
-    m_meanDice = np.mean(mean_dice)
-    m_meanPrec = np.mean(mean_prec)
-    m_meanRec = np.mean(mean_rec)
-    m_meanIOU = np.mean(mean_iou)
-
-    _run.log_scalar('mar_val_batches_meanDice', m_meanDice)
-    _run.log_scalar('mar_val_batches_meanPrec', m_meanPrec)
-    _run.log_scalar('mar_val_al_batches_meanRec', m_meanRec)
-    _run.log_scalar('mar_val_al_batches_meanIOU', m_meanIOU)
-    _log.info(f'mar_val batches meanDice: {m_meanDice}')
-    _log.info(f'mar_val batches meanPrec: {m_meanPrec}')
-    _log.info(f'mar_val batches meanRec: {m_meanRec}')
-    _log.info(f'mar_val batches meanIOU: {m_meanIOU}')
-    print("============ ============")
-    _log.info(f'End of validation')
-    return 1
+    # Calculate and log average metrics
+    avg_metrics = {name: np.mean(values) for name, values in metrics.items()}
+    for name, value in avg_metrics.items():
+        _log.info(f'Average {name}: {value:.4f}')
+        if wandb_enabled:
+            wandb.log({f"avg_{name}": value})
+    
+    # Save metrics as CSV
+    save_path = os.path.join(_config['path']['log_dir'], 'metrics.csv')
+    with open(save_path, 'w', newline='') as csvfile:
+        fieldnames = ['id', 'time'] + list(metrics.keys())
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        writer.writeheader()
+        for sample_metric in sample_metrics:
+            writer.writerow(sample_metric)
+    
+    # Create summary table for wandb
+    if wandb_enabled:
+        metrics_table = wandb.Table(dataframe=pd.DataFrame(sample_metrics))
+        wandb.log({"metrics_results": metrics_table})
+        
+        # Finish wandb run
+        wandb.finish()
+    
+    return avg_metrics
