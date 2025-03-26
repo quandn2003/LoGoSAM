@@ -325,6 +325,6 @@ class LoGoEncoder(nn.Module):
         x_combine = torch.add(x_norm, x_loc_norm)  ## Shape: [1, 512, 64, 64]
         x_combine = self.adjust_p(x_combine) #CBAM
         x_combine = self.layer_norm(x_combine)
-        out = self.relu(x_combine)
+        # out = self.relu(x_combine)
         
-        return out
+        return x_combine
