@@ -322,7 +322,9 @@ class LoGoEncoder(nn.Module):
                 
                 
         x_loc_norm = self.layer_norm(x_loc)
-        x_combine = torch.add(x_norm, x_loc_norm)  ## Shape: [1, 512, 64, 64]
+        # Weighted sum of the two feature maps
+        alpha = 0.75 # Weight for x_norm (0.7 means 70% x_norm, 30% x_loc_norm)
+        x_combine = alpha * x_norm + (1 - alpha) * x_loc_norm  ## Shape: [1, 512, 64, 64]
         x_combine = self.adjust_p(x_combine) #CBAM
         x_combine = self.layer_norm(x_combine)
         # out = self.relu(x_combine)
