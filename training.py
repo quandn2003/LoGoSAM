@@ -46,7 +46,8 @@ def initialize_wandb(config, run_name=None):
         project=config.get('wandb_project', "LoGoSAM"),
         name=run_name,
         config=config,
-        reinit=True
+        reinit=True,
+        log='all'
     )
     return wandb_run
 
@@ -204,6 +205,9 @@ def main(_run, _config, _log):
     model = FewShotSeg(image_size=_config['input_size'][0], pretrained_path=_config['reload_model_path'], cfg=_config['model'])
 
     model = model.to(device, precision)
+    
+    if wandb_enabled:
+        wandb.watch(model, log="all", log_freq=_config.get('wandb_log_freq', 100))
     model.train()
     
     _log.info('###### Load data ######')
