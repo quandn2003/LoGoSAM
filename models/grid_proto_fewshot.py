@@ -289,6 +289,8 @@ class FewShotSeg(nn.Module):
                         # TODO figure out kernel size
                     _raw_score, _, aux_attr, proto_grid = self.cls_unit(qry_fts, supp_ft, _msk.unsqueeze(
                         0), mode=fg_mode, thresh=FG_THRESH, isval=isval, val_wsize=val_wsize, vis_sim=show_viz)
+                    print(fg_mode)
+                    print(_raw_score)
                     raw_scores.append(_raw_score)
 
                 # create a score where each feature is the max of the raw_score
