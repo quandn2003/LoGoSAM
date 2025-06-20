@@ -65,7 +65,7 @@ class LoGoEncoder(nn.Module):
         self.local_block = nn.Sequential(
             nn.Conv2d(512, 512, kernel_size=1, stride=1, padding=0),
             nn.LayerNorm([512, 16, 16]),
-            AxialPositionalEmbedding(dim = 512, shape = (64, 64)),
+            AxialPositionalEmbedding(dim = 512, shape = (16, 16)),
             AxialAttention(dim = 512, heads = 8, dim_index = 1),
             nn.Conv2d(512, 512, kernel_size=1, stride=1, padding=0),
             nn.LayerNorm([512, 16, 16]),
